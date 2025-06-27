@@ -2,364 +2,273 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 
+type Mode = 'prompt' | 'try-on';
+
 interface JobResultProps {
   jobId: string;
-  mode?: 'prompt' | 'tryon';
+  mode: Mode;
 }
 
 interface JobStatus {
-  jobId: string;
-  state: 'completed' | 'failed' | 'active' | 'waiting' | 'delayed';
-  result?: {
-    imageUrl: string;
-  };
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  result?: string;
+  error?: string;
 }
 
-export function JobResult({ jobId, mode = 'prompt' }: JobResultProps) {
-  const [status, setStatus] = useState<JobStatus | null>(null);
-  const [error, setError] = useState<string | null>(null);
+export function JobResult({ jobId, mode }: JobResultProps) {
+  const [status, setStatus] = useState<JobStatus>({ status: 'queued' });
   const [progress, setProgress] = useState(0);
-  const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [downloadSuccess, setDownloadSuccess] = useState(false);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const progressRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Progress simulation
   useEffect(() => {
-    if (!jobId) return;
+    if (status.status === 'processing') {
+      const interval = setInterval(() => {
+        setProgress(prev => {
+          if (prev >= 95) return prev;
+          return prev + Math.random() * 3;
+        });
+      }, 1000);
+      progressRef.current = interval;
+      return () => {
+        if (progressRef.current) clearInterval(progressRef.current);
+      };
+    } else if (status.status === 'completed') {
+      setProgress(100);
+    }
+  }, [status.status]);
 
-    // Clear any existing intervals
-    if (pollingRef.current) clearTimeout(pollingRef.current);
-    if (progressRef.current) clearInterval(progressRef.current);
-    
-    // Start progress simulation
-    progressRef.current = setInterval(() => {
-      setProgress(prev => {
-        if (prev >= 90) return prev;
-        return prev + Math.random() * 10;
-      });
-    }, 1000);
-
+  // Status polling
+  useEffect(() => {
     const pollStatus = async () => {
       try {
-        console.log(`Polling status for job ${jobId}...`);
         const response = await fetch(`/api/status/${jobId}`);
-        if (!response.ok) {
-          throw new Error('Failed to fetch job status.');
-        }
         const data: JobStatus = await response.json();
-        setStatus(data);
-
-        if (data.state === 'completed') {
-          setProgress(100);
-          if (progressRef.current) clearInterval(progressRef.current);
-          console.log(`Job ${jobId} completed! Stopping polling.`);
-          return; // Stop polling
-        }
         
-        if (data.state === 'failed') {
-          if (progressRef.current) clearInterval(progressRef.current);
-          console.log(`Job ${jobId} failed! Stopping polling.`);
-          return; // Stop polling
-        }
-
-        // Continue polling only if job is still in progress
-        if (data.state === 'active' || data.state === 'waiting' || data.state === 'delayed') {
+        console.log('Polling status:', data.status);
+        setStatus(data);
+        
+        if (data.status === 'completed' || data.status === 'failed') {
+          console.log('Job finished, stopping polling');
+          if (pollingRef.current) {
+            clearTimeout(pollingRef.current);
+            pollingRef.current = null;
+          }
+          if (progressRef.current) {
+            clearInterval(progressRef.current);
+            progressRef.current = null;
+          }
+        } else {
           pollingRef.current = setTimeout(pollStatus, 2000);
         }
-      } catch (err: any) {
-        setError(err.message);
-        if (progressRef.current) clearInterval(progressRef.current);
-        console.error(`Polling error for job ${jobId}:`, err);
-        return; // Stop polling on error
+      } catch (error) {
+        console.error('Failed to fetch status:', error);
+        setStatus({ status: 'failed', error: 'Failed to fetch status' });
       }
     };
 
+    console.log('Starting polling for job:', jobId);
     pollStatus();
 
     return () => {
+      console.log('Cleanup: stopping polling');
       if (pollingRef.current) {
         clearTimeout(pollingRef.current);
-        console.log(`Cleanup: Stopped polling for job ${jobId}`);
+        pollingRef.current = null;
       }
       if (progressRef.current) {
         clearInterval(progressRef.current);
+        progressRef.current = null;
       }
     };
   }, [jobId]);
 
-  if (!jobId) return null;
-
-  const getStatusColor = (state: string) => {
-    switch (state) {
-      case 'completed': return 'text-green-600 bg-green-50 border-green-200';
-      case 'failed': return 'text-red-600 bg-red-50 border-red-200';
-      case 'active': return 'text-blue-600 bg-blue-50 border-blue-200';
-      case 'waiting': return 'text-yellow-600 bg-yellow-50 border-yellow-200';
-      case 'delayed': return 'text-orange-600 bg-orange-50 border-orange-200';
-      default: return 'text-gray-600 bg-gray-50 border-gray-200';
-    }
-  };
-
-  const getStatusIcon = (state: string) => {
-    switch (state) {
-      case 'completed': return '✅';
-      case 'failed': return '❌';
-      case 'active': return '⚡';
-      case 'waiting': return '⏳';
-      case 'delayed': return '⏸️';
-      default: return '🔄';
-    }
-  };
-
-  const getStatusMessage = (state: string) => {
-    switch (state) {
-      case 'completed': return 'Generation completed successfully!';
-      case 'failed': return 'Generation failed. Please try again.';
-      case 'active': return 'AI is generating your image...';
-      case 'waiting': return 'Job is queued and waiting to start...';
-      case 'delayed': return 'Job is delayed, please wait...';
-      default: return 'Processing...';
-    }
-  };
-
-  const downloadImage = async (imageUrl: string) => {
+  const downloadImage = async () => {
+    if (!status.result) return;
+    
     try {
-      const response = await fetch(imageUrl);
+      const response = await fetch(status.result);
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.style.display = 'none';
       a.href = url;
       a.download = `zyvilla-${mode}-${jobId}.jpg`;
       document.body.appendChild(a);
       a.click();
-      window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      setDownloadSuccess(true);
+      setTimeout(() => setDownloadSuccess(false), 3000);
     } catch (error) {
       console.error('Download failed:', error);
-      // Fallback: open image in new tab
-      window.open(imageUrl, '_blank');
     }
   };
 
-  const handleImageLoad = () => {
-    setImageLoaded(true);
-    setImageError(false);
+  const shareImage = async () => {
+    if (!status.result || !navigator.share) return;
+    
+    try {
+      await navigator.share({
+        title: 'Zyvilla AI Generated Image',
+        text: `Check out this AI-generated jewelry image from Zyvilla!`,
+        url: status.result
+      });
+    } catch (error) {
+      console.error('Share failed:', error);
+    }
   };
 
-  const handleImageError = () => {
-    setImageError(true);
-    setImageLoaded(false);
+  const getStatusIcon = () => {
+    switch (status.status) {
+      case 'queued':
+        return <div className="w-4 h-4 rounded-full bg-yellow-400 animate-pulse"></div>;
+      case 'processing':
+        return <div className="w-4 h-4 rounded-full bg-blue-400 animate-spin border-2 border-blue-400 border-t-transparent"></div>;
+      case 'completed':
+        return <div className="w-4 h-4 rounded-full bg-green-400"></div>;
+      case 'failed':
+        return <div className="w-4 h-4 rounded-full bg-red-400"></div>;
+      default:
+        return null;
+    }
+  };
+
+  const getStatusText = () => {
+    switch (status.status) {
+      case 'queued':
+        return 'Queued for processing...';
+      case 'processing':
+        return `Processing your ${mode === 'prompt' ? 'AI model generation' : 'virtual try-on'}...`;
+      case 'completed':
+        return 'Generation complete!';
+      case 'failed':
+        return 'Generation failed';
+      default:
+        return 'Unknown status';
+    }
   };
 
   return (
-    <div className="w-full bg-white/70 backdrop-blur-sm rounded-2xl border border-gray-200/50 shadow-sm overflow-hidden">
-      {/* Header */}
-      <div className="p-6 border-b border-gray-200/50">
-        <div className="flex items-center justify-between">
+    <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-gray-200/50 p-6 space-y-6">
+      {/* Status Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          {getStatusIcon()}
           <div>
-            <h3 className="text-xl font-bold text-gray-900 flex items-center">
-              <span className="mr-2">{mode === 'prompt' ? '🎨' : '👤'}</span>
-              {mode === 'prompt' ? 'AI Model Generation' : 'Virtual Try-On'}
-            </h3>
-            <p className="text-sm text-gray-500 mt-1">Job ID: {jobId}</p>
+            <h3 className="font-semibold text-gray-900">{getStatusText()}</h3>
+            <p className="text-sm text-gray-600">Job ID: {jobId}</p>
           </div>
-          {status && (
-            <div className={`px-3 py-1 rounded-full border text-sm font-medium ${getStatusColor(status.state)}`}>
-              <span className="mr-1">{getStatusIcon(status.state)}</span>
-              {status.state.charAt(0).toUpperCase() + status.state.slice(1)}
-            </div>
-          )}
         </div>
+        {status.status === 'processing' && (
+          <div className="text-right">
+            <div className="text-sm font-medium text-blue-600">{Math.round(progress)}%</div>
+          </div>
+        )}
       </div>
 
-      {/* Progress Section */}
-      {status && status.state !== 'completed' && status.state !== 'failed' && (
-        <div className="p-6 border-b border-gray-200/50">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-600">Progress</span>
-              <span className="font-medium text-gray-900">{Math.round(progress)}%</span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div 
-                className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full transition-all duration-500 ease-out"
-                style={{ width: `${progress}%` }}
-              ></div>
-            </div>
-            <p className="text-sm text-gray-600 text-center">
-              {getStatusMessage(status.state)}
-            </p>
-            {status.state === 'active' && (
-              <div className="flex items-center justify-center space-x-2 text-sm text-gray-500">
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-                <span>Estimated time: 30-60 seconds</span>
+      {/* Progress Bar */}
+      {(status.status === 'processing' || status.status === 'queued') && (
+        <div className="space-y-2">
+          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div 
+              className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full transition-all duration-300"
+              style={{ width: `${progress}%` }}
+            ></div>
+          </div>
+          <p className="text-xs text-gray-500 text-center">
+            {status.status === 'queued' 
+              ? 'Waiting in queue...' 
+              : 'This usually takes 30-60 seconds'
+            }
+          </p>
+        </div>
+      )}
+
+      {/* Result Image */}
+      {status.status === 'completed' && status.result && (
+        <div className="space-y-4">
+          <div className="relative group">
+            <img
+              src={status.result}
+              alt={`Generated ${mode} result`}
+              className="w-full rounded-xl shadow-lg transition-transform group-hover:scale-[1.02]"
+              onError={() => setImageError(true)}
+              onLoad={() => setImageError(false)}
+            />
+            {imageError && (
+              <div className="absolute inset-0 bg-gray-100 rounded-xl flex items-center justify-center">
+                <div className="text-center">
+                  <div className="text-2xl mb-2">🖼️</div>
+                  <p className="text-sm text-gray-600">Image failed to load</p>
+                  <a 
+                    href={status.result} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-blue-600 text-xs underline mt-1 block"
+                  >
+                    Open in new tab
+                  </a>
+                </div>
               </div>
             )}
           </div>
-        </div>
-      )}
-
-      {/* Error Section */}
-      {error && (
-        <div className="p-6 border-b border-gray-200/50">
-          <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-red-700 font-medium flex items-center">
-              <span className="mr-2">❌</span>
-              Error: {error}
-            </p>
+          
+          {/* Action Buttons */}
+          <div className="flex gap-3">
+            <button
+              onClick={downloadImage}
+              className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
+                downloadSuccess
+                  ? 'bg-green-100 text-green-700'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
+            >
+              {downloadSuccess ? '✓ Downloaded!' : '📥 Download'}
+            </button>
+            
+            {typeof navigator !== 'undefined' && 'share' in navigator && (
+              <button
+                onClick={shareImage}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+              >
+                📤 Share
+              </button>
+            )}
+            
+            <a
+              href={status.result}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+            >
+              🔗 Open
+            </a>
           </div>
         </div>
       )}
 
-      {/* Success Result */}
-      {status?.state === 'completed' && status.result?.imageUrl && (
-        <div className="p-6">
-          <div className="space-y-4">
-            <div className="text-center">
-              <h4 className="text-lg font-semibold text-gray-900 mb-2">
-                🎉 Your image is ready!
-              </h4>
-              <p className="text-sm text-gray-600">
-                {mode === 'prompt' 
-                  ? 'AI has generated a beautiful model wearing your jewelry'
-                  : 'Virtual try-on completed with your exact jewelry placement'
-                }
+      {/* Error State */}
+      {status.status === 'failed' && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-start space-x-3">
+            <div className="text-red-500 text-lg">⚠️</div>
+            <div>
+              <h4 className="font-semibold text-red-800">Generation Failed</h4>
+              <p className="text-red-700 text-sm mt-1">
+                {status.error || 'An error occurred during processing. Please try again.'}
               </p>
-            </div>
-            
-            {/* Image Display */}
-            <div className="relative group">
-              <div className="relative overflow-hidden rounded-xl border border-gray-200 shadow-lg bg-gray-50">
-                {!imageLoaded && !imageError && (
-                  <div className="absolute inset-0 flex items-center justify-center min-h-[300px]">
-                    <div className="text-center">
-                      <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-                      <p className="text-gray-500 text-sm">Loading image...</p>
-                    </div>
-                  </div>
-                )}
-
-                {imageError && (
-                  <div className="absolute inset-0 flex items-center justify-center min-h-[300px]">
-                    <div className="text-center p-8">
-                      <div className="text-4xl mb-4">🖼️</div>
-                      <p className="text-gray-600 font-medium mb-2">Image failed to load</p>
-                      <button
-                        onClick={() => window.open(status.result!.imageUrl, '_blank')}
-                        className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm hover:bg-blue-600 transition-colors"
-                      >
-                        Open in New Tab
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img 
-                  src={status.result.imageUrl} 
-                  alt={mode === 'prompt' ? 'AI generated model with jewelry' : 'Virtual try-on result'} 
-                  className={`w-full h-auto transition-all duration-300 ${
-                    imageLoaded ? 'opacity-100 group-hover:scale-105' : 'opacity-0'
-                  }`}
-                  onLoad={handleImageLoad}
-                  onError={handleImageError}
-                />
-                
-                <div className="absolute inset-0  bg-opacity-0 group-hover:bg-opacity-10 transition-all duration-300"></div>
-              </div>
-              
-              {/* Download Button Overlay */}
-              {imageLoaded && (
-                <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                  <button
-                    onClick={() => downloadImage(status.result!.imageUrl)}
-                    className="px-3 py-2 bg-white/90 backdrop-blur-sm text-gray-700 rounded-lg shadow-lg hover:bg-white transition-all duration-200 text-sm font-medium"
-                  >
-                    💾 Download
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex flex-col sm:flex-row gap-3">
-              <button
-                onClick={() => downloadImage(status.result!.imageUrl)}
-                className="flex-1 px-4 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg font-medium hover:from-blue-700 hover:to-purple-700 transition-all duration-200 flex items-center justify-center space-x-2"
-              >
-                <span>💾</span>
-                <span>Download Image</span>
-              </button>
-              
-              <button
-                onClick={() => window.open(status.result!.imageUrl, '_blank')}
-                className="px-4 py-3 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-all duration-200 flex items-center justify-center space-x-2"
-              >
-                <span>🔗</span>
-                <span>Open Original</span>
-              </button>
-              
-              <button
-                onClick={() => {
-                  if (navigator.share && status.result?.imageUrl) {
-                    navigator.share({
-                      title: 'My Virtual Try-On Result',
-                      text: `Check out my ${mode === 'prompt' ? 'AI-generated model' : 'virtual try-on'} from Zyvilla!`,
-                      url: status.result.imageUrl,
-                    });
-                  } else {
-                    navigator.clipboard.writeText(status.result?.imageUrl || '');
-                  }
-                }}
-                className="px-4 py-3 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-all duration-200 flex items-center justify-center space-x-2"
-              >
-                <span>📤</span>
-                <span>Share</span>
-              </button>
-            </div>
-
-            {/* Tips */}
-            {imageLoaded && (
-              <div className="mt-6 p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border border-green-200">
-                <h5 className="font-semibold text-green-900 mb-2 flex items-center">
-                  <span className="mr-2">💡</span>
-                  Pro Tips
-                </h5>
-                <ul className="text-sm text-green-800 space-y-1">
-                  <li>• Save this image for your jewelry collection</li>
-                  <li>• Share on social media to showcase your jewelry</li>
-                  <li>• Use for e-commerce product listings</li>
-                  <li>• Try different prompts for varied styles</li>
+              <div className="mt-3">
+                <h5 className="font-medium text-red-800 text-sm">Troubleshooting Tips:</h5>
+                <ul className="text-red-700 text-xs mt-1 space-y-1">
+                  <li>• Make sure your jewelry image is clear and well-lit</li>
+                  <li>• Ensure {mode === 'try-on' ? 'the person\'s face is clearly visible' : 'your prompt is descriptive'}</li>
+                  <li>• Try using a different image or adjusting your description</li>
+                  <li>• Check your internet connection and try again</li>
                 </ul>
               </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Failed State */}
-      {status?.state === 'failed' && (
-        <div className="p-6">
-          <div className="text-center space-y-4">
-            <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-red-700 font-medium flex items-center justify-center">
-                <span className="mr-2">❌</span>
-                Generation failed
-              </p>
-              <p className="text-red-600 text-sm mt-2">
-                Something went wrong during processing. Please try again with different images or prompts.
-              </p>
-            </div>
-            
-            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <h5 className="font-semibold text-yellow-900 mb-2">Troubleshooting Tips:</h5>
-              <ul className="text-sm text-yellow-800 space-y-1 text-left">
-                <li>• Ensure images are clear and well-lit</li>
-                <li>• Try different image formats (JPG, PNG)</li>
-                <li>• Check that jewelry is clearly visible</li>
-                <li>• Use simpler, more descriptive prompts</li>
-              </ul>
             </div>
           </div>
         </div>

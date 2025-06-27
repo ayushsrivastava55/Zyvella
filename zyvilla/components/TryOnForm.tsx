@@ -23,7 +23,7 @@ export function TryOnForm() {
   const [uploading, setUploading] = useState(false);
   
   // Mode state
-  const [mode, setMode] = useState<'prompt' | 'tryon'>('prompt');
+  const [mode, setMode] = useState<'prompt' | 'try-on'>('prompt');
 
   // Convert file to base64 data URL
   const fileToDataUrl = (file: File): Promise<string> => {
@@ -51,8 +51,8 @@ export function TryOnForm() {
     }
   };
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
     setIsLoading(true);
     setUploading(true);
     setError(null);
@@ -77,7 +77,7 @@ export function TryOnForm() {
       }
 
       // Validate for try-on mode
-      if (mode === 'tryon' && !finalPersonImage) {
+      if (mode === 'try-on' && !finalPersonImage) {
         throw new Error('Please provide a person image for virtual try-on mode.');
       }
 
@@ -100,8 +100,8 @@ export function TryOnForm() {
 
       const data = await response.json();
       setJobId(data.jobId);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred');
     } finally {
       setIsLoading(false);
       setUploading(false);
@@ -118,14 +118,14 @@ export function TryOnForm() {
     setPersonImage('');
   };
 
-  const switchMode = (newMode: 'prompt' | 'tryon') => {
+  const switchMode = (newMode: 'prompt' | 'try-on') => {
     setMode(newMode);
     // Clear person inputs when switching to prompt mode
     if (newMode === 'prompt') {
       clearPersonInput();
     }
     // Set default prompt when switching to try-on mode
-    if (newMode === 'tryon' && !prompt) {
+    if (newMode === 'try-on' && !prompt) {
       setPrompt('Professional portrait wearing elegant jewelry');
     }
   };
@@ -163,18 +163,18 @@ export function TryOnForm() {
           
           <button
             type="button"
-            onClick={() => switchMode('tryon')}
+            onClick={() => switchMode('try-on')}
             className={`p-6 rounded-xl border-2 transition-all duration-200 text-left ${
-              mode === 'tryon'
+              mode === 'try-on'
                 ? 'border-purple-500 bg-purple-50 shadow-md'
                 : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
             }`}
           >
             <div className="flex items-center mb-3">
               <div className={`w-6 h-6 rounded-full mr-3 flex items-center justify-center ${
-                mode === 'tryon' ? 'bg-purple-500' : 'bg-gray-300'
+                mode === 'try-on' ? 'bg-purple-500' : 'bg-gray-300'
               }`}>
-                {mode === 'tryon' && <div className="w-2 h-2 bg-white rounded-full"></div>}
+                {mode === 'try-on' && <div className="w-2 h-2 bg-white rounded-full"></div>}
               </div>
               <h3 className="font-semibold text-gray-900">👤 Virtual Try-On</h3>
             </div>
@@ -274,7 +274,7 @@ export function TryOnForm() {
             </div>
 
             {/* Person Image Section - Only show in try-on mode */}
-            {mode === 'tryon' && (
+            {mode === 'try-on' && (
               <div className="space-y-4">
                 <div className="flex items-center space-x-2">
                   <Label className="text-lg font-semibold text-gray-900">👤 Person Image</Label>
@@ -426,7 +426,7 @@ export function TryOnForm() {
       </Card>
       
       {/* Results */}
-      {jobId && <JobResult jobId={jobId} mode={mode} />}
+      {jobId && <JobResult jobId={jobId} mode={mode === 'try-on' ? 'try-on' : mode} />}
     </div>
   );
 } 
