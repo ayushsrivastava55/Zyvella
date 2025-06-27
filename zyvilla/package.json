@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build",
+    "build": "next build && tsc workers/image-generator.ts --outDir dist --target es2022 --module esnext --moduleResolution bundler",
     "start": "next start",
     "lint": "next lint",
-    "worker:dev": "node --loader ts-node/esm --no-warnings -r dotenv/config workers/image-generator.ts"
+    "worker:dev": "node --loader ts-node/esm --no-warnings -r dotenv/config workers/image-generator.ts",
+    "worker:start": "node dist/image-generator.js"
   },
   "dependencies": {
     "@fal-ai/client": "^1.5.0",
