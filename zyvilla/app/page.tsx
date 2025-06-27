@@ -147,11 +147,11 @@ export default function HomePage() {
                 <li className="flex items-start">
                   <span className="text-green-600 mr-2">•</span>
                   For virtual try-on, ensure the person&apos;s face is clearly visible
-                </li>
+          </li>
                 <li className="flex items-start">
                   <span className="text-green-600 mr-2">•</span>
                   Generation typically takes 30-60 seconds
-                </li>
+          </li>
               </ul>
             </div>
           </div>

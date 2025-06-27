@@ -191,12 +191,23 @@ export function JobResult({ jobId, mode }: JobResultProps) {
       {status.status === 'completed' && status.result && (
         <div className="space-y-4">
           <div className="relative group">
+            {/* Debug info */}
+            <div className="mb-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
+              <p><strong>Debug:</strong> Image URL: {status.result}</p>
+            </div>
             <img
               src={status.result}
               alt={`Generated ${mode} result`}
               className="w-full rounded-xl shadow-lg transition-transform group-hover:scale-[1.02]"
-              onError={() => setImageError(true)}
-              onLoad={() => setImageError(false)}
+              onError={(e) => {
+                console.error('Image failed to load:', e);
+                setImageError(true);
+              }}
+              onLoad={() => {
+                console.log('Image loaded successfully');
+                setImageError(false);
+              }}
+              crossOrigin="anonymous"
             />
             {imageError && (
               <div className="absolute inset-0 bg-gray-100 rounded-xl flex items-center justify-center">

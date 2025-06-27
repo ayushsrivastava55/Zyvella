@@ -1,0 +1,27 @@
+{
+  "functions": {
+    "app/api/generate/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/status/[jobId]/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/worker/route.ts": {
+      "maxDuration": 300
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/worker",
+      "schedule": "* * * * *"
+    }
+  ],
+  "env": {
+    "FAL_KEY": "@fal_key",
+    "REDIS_HOST": "@redis_host",
+    "REDIS_PORT": "@redis_port",
+    "REDIS_USERNAME": "@redis_username",
+    "REDIS_PASSWORD": "@redis_password",
+    "REDIS_TLS": "@redis_tls"
+  }
+}
