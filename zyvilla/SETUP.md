@@ -35,11 +35,7 @@ docker run -d --name redis-server -p 6379:6379 redis:alpine
 
 ### 4. Run Everything at Once
 
-```bash
-./run-everything.sh
-```
-
-Or manually:
+manually:
 
 ```bash
 # Terminal 1: Start Next.js
